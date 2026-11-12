@@ -383,4 +383,10 @@ status_t AudioPolicyService::AudioPolicyClient::getMmapPolicyInfos(
     return af->getMmapPolicyInfos(policyType, policyInfos);
 }
 
+status_t AudioPolicyService::AudioPolicyClient::closeSpatializerOutput(
+        audio_io_handle_t output, int delayMs) {
+    mAudioPolicyService->onCloseSpatializerOutput(output, delayMs);
+    return NO_ERROR;
+}
+
 } // namespace android

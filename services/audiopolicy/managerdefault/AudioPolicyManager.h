@@ -482,9 +482,14 @@ public:
 
         virtual status_t getSpatializerOutput(const audio_config_base_t *config,
                                                 const audio_attributes_t *attr,
-                                                audio_io_handle_t *output);
+                                                audio_io_handle_t *output,
+                                                bool checkClientRoutes = true);
 
         virtual status_t releaseSpatializerOutput(audio_io_handle_t output);
+
+        virtual status_t closeReleasedSpatializerOutput(audio_io_handle_t output);
+
+        virtual void checkVirtualizerClientRoutes();
 
         virtual audio_direct_mode_t getDirectPlaybackSupport(const audio_attributes_t *attr,
                                                              const audio_config_t *config);
@@ -1065,6 +1070,7 @@ protected:
         // list of descriptors for outputs currently opened
 
         sp<SwAudioOutputDescriptor> mSpatializerOutput;
+        nsecs_t mSpatializerReleaseTimeNs = 0;
 
         SwAudioOutputCollection mOutputs;
         // copy of mOutputs before setDeviceConnectionState() opens new outputs
@@ -1269,7 +1275,6 @@ private:
         sp<IOProfile> getSpatializerOutputProfile(const audio_config_t *config,
                                                   const AudioDeviceTypeAddrVector &devices) const;
 
-        void checkVirtualizerClientRoutes();
 
         /**
          * @brief Returns true if at least one device can only be reached via the output passed

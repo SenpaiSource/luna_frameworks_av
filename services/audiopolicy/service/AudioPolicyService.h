@@ -452,6 +452,8 @@ public:
     void onCheckSpatializer_l() REQUIRES(mMutex);
     void maybeCheckSpatializer_l() REQUIRES(mMutex);
     void doOnCheckSpatializer();
+    void onCloseSpatializerOutput(audio_io_handle_t output, int delayMs);
+    status_t doCloseSpatializerOutput(audio_io_handle_t output);
 
     void onUpdateActiveSpatializerTracks_l() REQUIRES(mMutex);
     void doOnUpdateActiveSpatializerTracks();
@@ -638,6 +640,7 @@ private:
             ROUTING_UPDATED,
             UPDATE_UID_STATES,
             CHECK_SPATIALIZER_OUTPUT, // verify if spatializer effect should be created or moved
+            CLOSE_SPATIALIZER_OUTPUT, // close released spatializer output after handoff
             UPDATE_ACTIVE_SPATIALIZER_TRACKS, // Update active track counts on spalializer output
             VOL_RANGE_INIT_REQUEST, // request to reset the volume range indices
         };
@@ -691,6 +694,8 @@ private:
                     void        routingChangedCommand();
                     void        updateUidStatesCommand();
                     void        checkSpatializerCommand();
+                    void        closeSpatializerOutputCommand(audio_io_handle_t output,
+                                                              int delayMs);
                     void        updateActiveSpatializerTracksCommand();
                     void        volRangeInitReqCommand();
 
@@ -721,6 +726,11 @@ private:
             virtual ~AudioCommandData() {}
         protected:
             AudioCommandData() {}
+        };
+
+        class CloseSpatializerOutputData : public AudioCommandData {
+        public:
+            audio_io_handle_t mOutput;
         };
 
         class VolumeData : public AudioCommandData {
@@ -966,6 +976,8 @@ private:
                 const struct audio_port_v7 *port, media::DeviceConnectedState state) override;
 
         status_t invalidateTracks(const std::vector<audio_port_handle_t>& portIds) override;
+
+        status_t closeSpatializerOutput(audio_io_handle_t output, int delayMs) override;
 
         status_t getAudioMixPort(const struct audio_port_v7 *devicePort,
                                  struct audio_port_v7 *port,

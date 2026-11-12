@@ -619,34 +619,54 @@ void AudioPolicyService::doOnCheckSpatializer()
         audio_config_base_t config = mSpatializer->getAudioInConfig();
 
         audio_utils::lock_guard _l(mMutex);
-        status_t status =
-                mAudioPolicyManager->getSpatializerOutput(&config, &attr, &newOutput);
+        status_t status = mAudioPolicyManager->getSpatializerOutput(
+                &config, &attr, &newOutput, false /*checkClientRoutes*/);
         ALOGV("%s currentOutput %d newOutput %d channel_mask %#x",
                 __func__, currentOutput, newOutput, config.channel_mask);
         if (status == NO_ERROR && currentOutput == newOutput) {
+            mAudioPolicyManager->checkVirtualizerClientRoutes();
             return;
         }
         std::vector<audio_channel_mask_t> activeTracksMasks =
                 getActiveTracksMasks_l(newOutput);
         mMutex.unlock();
-        // It is OK to call detachOutput() is none is already attached.
+        // It is OK to call detachOutput() if none is already attached.
         mSpatializer->detachOutput();
         if (status == NO_ERROR && newOutput != AUDIO_IO_HANDLE_NONE) {
             status = mSpatializer->attachOutput(newOutput, activeTracksMasks);
         }
         mMutex.lock();
-        if (status != NO_ERROR) {
+        if (status == NO_ERROR) {
+            // Re-route tracks only after the spatializer effect is attached.
+            mAudioPolicyManager->checkVirtualizerClientRoutes();
+        } else {
             mAudioPolicyManager->releaseSpatializerOutput(newOutput);
         }
     } else if (mSpatializer->getLevel() == Spatialization::Level::NONE &&
                mSpatializer->getOutput() != AUDIO_IO_HANDLE_NONE) {
-        audio_io_handle_t output = mSpatializer->detachOutput();
+        audio_io_handle_t output = mSpatializer->getOutput();
 
         if (output != AUDIO_IO_HANDLE_NONE) {
             audio_utils::lock_guard _l(mMutex);
             mAudioPolicyManager->releaseSpatializerOutput(output);
         }
+        mSpatializer->detachOutput();
     }
+}
+
+void AudioPolicyService::onCloseSpatializerOutput(audio_io_handle_t output, int delayMs)
+{
+    mOutputCommandThread->closeSpatializerOutputCommand(output, delayMs);
+}
+
+status_t AudioPolicyService::doCloseSpatializerOutput(audio_io_handle_t output)
+{
+    ALOGV("%s output %d", __func__, output);
+    if (mAudioPolicyManager == nullptr) {
+        return NO_INIT;
+    }
+    audio_utils::lock_guard _l(mMutex);
+    return mAudioPolicyManager->closeReleasedSpatializerOutput(output);
 }
 
 std::vector<audio_channel_mask_t> AudioPolicyService::getActiveTracksMasks_l(
@@ -2071,6 +2091,19 @@ bool AudioPolicyService::AudioCommandThread::threadLoop()
                     svc->doOnCheckSpatializer();
                     ul.lock();
                     } break;
+                case CLOSE_SPATIALIZER_OUTPUT: {
+                    CloseSpatializerOutputData *data =
+                            (CloseSpatializerOutputData *)command->mParam.get();
+                    ALOGV("AudioCommandThread() processing close spatializer output %d",
+                            data->mOutput);
+                    svc = mService.promote();
+                    if (svc == 0) {
+                        break;
+                    }
+                    ul.unlock();
+                    command->mStatus = svc->doCloseSpatializerOutput(data->mOutput);
+                    ul.lock();
+                    } break;
 
                 case UPDATE_ACTIVE_SPATIALIZER_TRACKS: {
                     ALOGV("AudioCommandThread() processing update spatializer tracks");
@@ -2442,6 +2475,18 @@ void AudioPolicyService::AudioCommandThread::checkSpatializerCommand()
     command->mCommand = CHECK_SPATIALIZER_OUTPUT;
     ALOGV("AudioCommandThread() adding check spatializer");
     sendCommand(command);
+}
+
+void AudioPolicyService::AudioCommandThread::closeSpatializerOutputCommand(
+        audio_io_handle_t output, int delayMs)
+{
+    sp<AudioCommand> command = new AudioCommand();
+    command->mCommand = CLOSE_SPATIALIZER_OUTPUT;
+    CloseSpatializerOutputData *data = new CloseSpatializerOutputData();
+    data->mOutput = output;
+    command->mParam = data;
+    ALOGV("AudioCommandThread() adding close spatializer output %d delay %d", output, delayMs);
+    sendCommand(command, delayMs);
 }
 
 void AudioPolicyService::AudioCommandThread::updateActiveSpatializerTracksCommand()
